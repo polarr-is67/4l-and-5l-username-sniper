@@ -49,11 +49,12 @@ void do_work(int len, vector<long long> my_list) {
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-
-    int counter = 0;
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_FASTOPEN, 1L);
+    curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
 
     for (long long id : my_list) {
         if (stop_now) break;
@@ -65,8 +66,7 @@ void do_work(int len, vector<long long> my_list) {
             tmp /= chars.length();
         }
 
-        counter++;
-        if (counter % 50 == 0) {
+        {
             lock_guard<mutex> lock(print_lock);
             cout << "\033[36mchecking " << name << "\033[0m\r" << flush;
         }
@@ -89,11 +89,9 @@ void do_work(int len, vector<long long> my_list) {
                 break;
             }
             else if (code == 429) {
-                this_thread::sleep_for(chrono::seconds(5));
+                this_thread::sleep_for(chrono::seconds(2));
             }
         }
-        
-        this_thread::sleep_for(chrono::milliseconds(20));
     }
 
     curl_slist_free_all(headers);
@@ -115,7 +113,8 @@ int main() {
     rng_state = chrono::high_resolution_clock::now().time_since_epoch().count();
     if (rng_state == 0) rng_state = 88172645463325252ULL; 
 
-    int cpus = 4; 
+    int cpus = thread::hardware_concurrency();
+    if (cpus == 0) cpus = 8; 
 
     long long total = 1;
     for (int i = 0; i < len; i++) total *= chars.length();
