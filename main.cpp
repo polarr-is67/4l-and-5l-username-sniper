@@ -3,7 +3,6 @@
 #include <vector>
 #include <thread>
 #include <mutex>
-#include <random>
 #include <chrono>
 #include <curl/curl.h>
 
@@ -12,6 +11,24 @@ using namespace std;
 bool stop_now = false;
 mutex print_lock;
 string chars = "abcdefghijklmnopqrstuvwxyz0123456789_";
+
+unsigned long long rng_state;
+
+unsigned long long xorshift64() {
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 7;
+    rng_state ^= rng_state << 17;
+    return rng_state;
+}
+
+void manual_shuffle(vector<long long>& arr) {
+    for (long long i = arr.size() - 1; i > 0; i--) {
+        long long j = xorshift64() % (i + 1);
+        long long temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+    }
+}
 
 size_t write_data(void* ptr, size_t size, size_t nmemb, string* s) {
     s->append((char*)ptr, size * nmemb);
@@ -36,6 +53,8 @@ void do_work(int len, vector<long long> my_list) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 
+    int counter = 0;
+
     for (long long id : my_list) {
         if (stop_now) break;
 
@@ -46,7 +65,8 @@ void do_work(int len, vector<long long> my_list) {
             tmp /= chars.length();
         }
 
-        {
+        counter++;
+        if (counter % 50 == 0) {
             lock_guard<mutex> lock(print_lock);
             cout << "\033[36mchecking " << name << "\033[0m\r" << flush;
         }
@@ -69,9 +89,11 @@ void do_work(int len, vector<long long> my_list) {
                 break;
             }
             else if (code == 429) {
-                this_thread::sleep_for(chrono::seconds(3));
+                this_thread::sleep_for(chrono::seconds(5));
             }
         }
+        
+        this_thread::sleep_for(chrono::milliseconds(20));
     }
 
     curl_slist_free_all(headers);
@@ -90,8 +112,10 @@ int main() {
         return 0;
     }
 
-    int cpus = thread::hardware_concurrency();
-    if (cpus == 0) cpus = 4;
+    rng_state = chrono::high_resolution_clock::now().time_since_epoch().count();
+    if (rng_state == 0) rng_state = 88172645463325252ULL; 
+
+    int cpus = 4; 
 
     long long total = 1;
     for (int i = 0; i < len; i++) total *= chars.length();
@@ -100,8 +124,7 @@ int main() {
     vector<long long> nums(total);
     for (long long i = 0; i < total; i++) nums[i] = i;
 
-    unsigned seed = chrono::system_clock::now().time_since_epoch().count();
-    shuffle(nums.begin(), nums.end(), default_random_engine(seed));
+    manual_shuffle(nums);
 
     long long part = total / cpus;
     cout << "starting " << cpus << " threads...\n";
